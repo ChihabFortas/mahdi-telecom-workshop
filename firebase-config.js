@@ -1,7 +1,7 @@
 // ===== The ONLY file with your own settings. Updates never overwrite it. =====
 // Paste the config from Firebase console > Project settings > Your apps > Web app.
 // (These values are public identifiers; security comes from firestore.rules.)
-export const FIREBASE_CONFIG = {
+export const firebaseConfig = {
   apiKey: "AIzaSyDrBcgHqAd9dkO-RUkvonlKqdCFowSxcS0",
   authDomain: "mahdi-telecom-workshop.firebaseapp.com",
   projectId: "mahdi-telecom-workshop",
