@@ -1,17 +1,19 @@
-// ===== The ONLY file with your own settings. Updates never overwrite it. =====
-// Paste the config from Firebase console > Project settings > Your apps > Web app.
-// (These values are public identifiers; security comes from firestore.rules.)
+// Paste your Firebase web app config here (Firebase console > Project settings > Your apps)
 export const firebaseConfig = {
-  apiKey: "AIzaSyDrBcgHqAd9dkO-RUkvonlKqdCFowSxcS0",
-  authDomain: "mahdi-telecom-workshop.firebaseapp.com",
-  projectId: "mahdi-telecom-workshop",
-  storageBucket: "mahdi-telecom-workshop.firebasestorage.app",
-  messagingSenderId: "927617923647",
-  appId: "1:927617923647:web:d767aade3fecee945e968a",
-  measurementId: "G-1MYCR258GV"
+  apiKey: "AIzaSyDWtdRlfk87KnlsKofg08db_pUwVKq6YFE",
+  authDomain: "mahdi-repair.firebaseapp.com",
+  projectId: "mahdi-repair",
+  appId: "1:516189596370:web:1119db4e0d2b6dcd12db0b"
 };
+// Shop details printed on receipts. trackUrl = public address of track.html on GitHub Pages
+export const SHOP = {
+  name: "Mahdi Repair",
+  phone: "+562 71 63 04",
+  trackUrl: "https://chihabfortas.github.io/MAHDI-REPAIR/track.html"
+};
+// Bootstrap owner emails: on first sign-in these accounts become admin automatically.
+// Also put the same email(s) in the isOwner() list of firestore.rules.
+export const ADMINS = ["asterphinix141@gmail.com"];
 
-// Google emails that are always Admin (the owner). Must match firestore.rules.
-export const OWNER_EMAILS = ["asterphinix141@gmail.com"];
-
-export const APP_VERSION = "1";
+// Staff are signed out after this many idle minutes
+export const IDLE_MINUTES = 30;

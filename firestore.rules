@@ -1,113 +1,97 @@
 rules_version = '2';
 service cloud.firestore {
-  match /databases/{database}/documents {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function prof() { return get(/databases/$(db)/documents/users/$(request.auth.uid)).data; }
+    function active() { return signedIn() && exists(/databases/$(db)/documents/users/$(request.auth.uid)) && prof().active == true; }
+    function anyOf(rs) { return active() && prof().role in rs; }
+    // Bootstrap owner(s): same email(s) as ADMINS in firebase-config.js
+    function isOwner() { return signedIn() && request.auth.token.email in ['owner@example.com']; }
+    function staff() { return anyOf(['reception','technician','inventory','manager','admin']); }
+    function front() { return anyOf(['reception','manager','admin']); }
+    function boss()  { return anyOf(['manager','admin']); }
+    function onlyKeys(k) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(k); }
 
-    // ---------- helpers ----------
-    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
-    function me() { return request.auth.token.email.lower(); }
-    // EDIT: your owner email(s) - same as OWNER_EMAILS in firebase-config.js
-    function isOwner() { return signedIn() && me() in ['owner@example.com']; }
-    function myRole() {
-      return !signedIn() ? 'none'
-        : isOwner() ? 'admin'
-        : exists(/databases/$(database)/documents/roles/$(me())) ? get(/databases/$(database)/documents/roles/$(me())).data.role
-        : 'none';
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || boss());
+      allow create: if (isOwner() && request.auth.uid == uid) || anyOf(['admin']);
+      allow update: if anyOf(['admin']) || (isOwner() && request.auth.uid == uid);
+      allow delete: if anyOf(['admin']);
     }
-    function cliRole() { return myRole() in ['admin','manager','cashier','reception']; }
-    function invRole() { return myRole() in ['admin','manager','technician']; }
-    function staff() { return myRole() in ['admin','reception','technician','manager','cashier']; }
-    function active() { return staff() || myRole() == 'guest'; }
-    function touches(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
-
-    // ---------- roles: admins manage, everyone can read their own ----------
-    match /roles/{docId} {
-      allow get: if signedIn() && (docId == me() || myRole() == 'admin');
-      allow list: if myRole() == 'admin';
-      allow write: if myRole() == 'admin';
+    match /tickets/{id} {
+      allow read: if front() || anyOf(['inventory']) || (anyOf(['technician']) && (resource.data.techId == request.auth.uid || resource.data.repairedBy == request.auth.uid));
+      allow create: if front();
+      allow update: if front()
+        || (anyOf(['technician']) && resource.data.techId == request.auth.uid && onlyKeys(['status','items','services','history','updatedAt','pendingQuote','noRepair','repairedBy','repairedByName','repairedAt','repairLevel']))
+        || (anyOf(['inventory']) && onlyKeys(['items','updatedAt']));
+      allow delete: if boss();
     }
-
-    // ---------- cases ----------
-    match /cases/{caseId} {
-      allow read: if active();
-      allow create: if myRole() in ['admin','reception']
-        && request.resource.data.warranty == 'in'
-        && request.resource.data.status == 'waiting'
-        && request.resource.data.loc == 'reception';
-      allow update: if staff()
-        && (!touches(['warranty','warrantyLog']) || myRole() in ['admin','technician'])
-        && (!touches(['photo','photoDone','repairInfo','parts','cost','tech','startedAt','repairedAt','outcome']) || myRole() in ['admin','technician'])
-        && (!touches(['charge']) || myRole() in ['admin','manager','cashier','technician'])
-        && (!touches(['expected']) || myRole() in ['admin','technician'])
-        && (!touches(['tk','pubSig']) || myRole() in ['admin','reception','technician'])
-        && (!touches(['clientId']) || myRole() in ['admin','reception','manager'])
-        && (!touches(['partLines','partsTotal']) || invRole())
-        && (!touches(['loc','track','returnDate']) || myRole() in ['admin','reception','technician'])
-        && (!touches(['status']) || myRole() in ['admin','reception','technician','manager'])
-        // a case can only be re-opened while the phone is physically in the workshop
-        && !(resource.data.status in ['repaired','delivered','archived'] && request.resource.data.status == 'repairing' && resource.data.loc != 'workshop');
-      allow delete: if myRole() == 'admin';
+    match /technicians/{id} { allow read: if staff(); allow write: if anyOf(['admin']); }
+    match /settings/{id} { allow read: if staff(); allow write: if anyOf(['admin']); }
+    // Public tracking: customers can fetch ONE document by code/phone, never list them
+    match /tracking/{id}      { allow get: if true; allow list: if false; allow write: if staff(); }
+    match /trackingPhone/{id} { allow get: if true; allow list: if false; allow write: if staff(); }
+    match /customers/{id} { allow read, write: if front(); }
+    match /payments/{id} {
+      allow read, create: if front();
+      allow delete: if anyOf(['admin']) && resource.data.demo == true;
     }
-
-    // ---------- inventory: receiving notes, part lots, stock movements ----------
-    match /grn/{noteId} {
-      allow read: if invRole();
-      allow create: if invRole() && request.resource.data.status == 'draft';
-      allow update, delete: if invRole() && resource.data.status == 'draft';   // confirmed notes are closed
+    match /parts/{id} {
+      allow read: if staff();
+      allow create, delete: if boss();
+      allow update: if boss() || (staff() && onlyKeys(['qty']));
     }
-    match /parts/{partId} {
-      allow read: if invRole();
-      allow create: if invRole();
-      allow update, delete: if myRole() == 'admin';
+    match /products/{id} {
+      allow read: if staff();
+      allow create, delete: if boss();
+      allow update: if boss() || (staff() && onlyKeys(['qty']));
     }
-    match /stockmoves/{moveId} {
-      allow read: if invRole();
-      allow create: if invRole();
-      allow update, delete: if false;                                         // append-only history
+    match /movements/{id} {
+      allow read, create: if staff();
+      allow delete: if anyOf(['admin']) && resource.data.demo == true;
     }
-
-    // ---------- clients and their prepaid accounts ----------
-    match /clients/{clientId} {
-      allow read: if cliRole();
-      allow create, update: if cliRole();
-      allow delete: if myRole() == 'admin';
+    match /receivings/{id} { allow read: if staff(); allow write: if boss(); }
+    match /deliveries/{id} {
+      allow read, create: if front();
+      allow update, delete: if anyOf(['admin']);
     }
-    match /acctx/{txId} {
-      allow read: if cliRole();
-      allow create: if cliRole();
-      allow update, delete: if false;                                         // append-only ledger
+    match /registers/{id} { allow read: if front(); allow write: if boss(); }
+    match /cashEntries/{id} { allow read: if boss(); allow create: if front(); allow update, delete: if boss(); }
+    match /expenses/{id} {
+      allow read: if boss() && (resource.data.adminOnly == false || anyOf(['admin']));
+      allow create: if boss();
+      allow update, delete: if boss() && (resource.data.adminOnly == false || anyOf(['admin']));
     }
-
-    // ---------- public tracking pages (no personal data; customers read by tracking code or phone) ----------
-    match /track/{codeId} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if staff();
+    match /losses/{id} { allow read, write: if boss(); }
+    match /dayClosings/{id} {
+      allow read, create: if boss();
+      allow update: if boss() && (resource.data.locked != true || anyOf(['admin']));
+      allow delete: if anyOf(['admin']);
     }
-    match /trackph/{phoneId} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if staff();
+    match /suppliers/{id} { allow read: if boss() || anyOf(['inventory']); allow write: if boss(); }
+    match /supplierPayments/{id} { allow read, create: if boss(); allow update, delete: if anyOf(['admin']); }
+    match /returns/{id} { allow read, create: if front(); allow update, delete: if anyOf(['admin']); }
+    match /counters/{id} { allow read, write: if front() || anyOf(['inventory']); }
+    match /partNeeds/{id} { allow read, create: if staff(); allow update: if anyOf(['inventory','reception','manager','admin']); allow delete: if boss(); }
+    match /purchaseOrders/{id} { allow read, create, update: if boss() || anyOf(['inventory']); allow delete: if anyOf(['admin']); }
+    match /invoices/{id} {
+      allow read: if boss() || (front() && resource.data.partyType == 'customer');
+      allow create: if boss() || (front() && request.resource.data.partyType == 'customer');
+      allow update: if boss();
+      allow delete: if anyOf(['admin']);
     }
-
-    // ---------- shop settings (thresholds, currency, notice): everyone reads, admin writes ----------
-    match /settings/{docId} {
-      allow read: if active();
-      allow write: if myRole() == 'admin';
+    match /stockCounts/{id} {
+      allow read, create, update: if boss();
+      allow delete: if anyOf(['admin']);
+      match /lines/{l} { allow read, write: if boss(); }
     }
-
-    // ---------- cash payments ----------
-    match /payments/{paymentId} {
-      allow read: if myRole() in ['admin','manager','cashier','technician','reception'];
-      allow create: if myRole() in ['admin','manager','cashier','reception'];
-      allow update: if false;
-      allow delete: if myRole() == 'admin';
+    match /priceLog/{id} { allow read, create: if boss(); }
+    match /feedback/{id} {
+      allow read: if staff();
+      allow create: if request.resource.data.keys().hasOnly(['code','rating','comment','createdAt']) && request.resource.data.code == id && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5 && request.resource.data.comment is string && request.resource.data.comment.size() <= 500 && request.resource.data.createdAt == request.time && exists(/databases/$(db)/documents/tracking/$(id));
+      allow update, delete: if anyOf(['admin']);
     }
-
-    // ---------- audit log: append-only, admins read ----------
-    match /audit/{entryId} {
-      allow read: if myRole() == 'admin';
-      allow create: if staff() && request.resource.data.uid == me();
-      allow update, delete: if false;
-    }
+    match /heldSales/{id} { allow read, write: if front(); }
+    match /audit/{id} { allow read: if boss(); allow create: if staff(); }
   }
 }
