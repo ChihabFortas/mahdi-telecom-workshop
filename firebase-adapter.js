@@ -11,7 +11,7 @@ const $ = s => document.querySelector(s);
 $("#ver").textContent = "MAHDI TELECOM WORKSHOP · v" + ((document.querySelector('meta[name="app-version"]') || {}).content || "");
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-const fs = initializeFirestore(app, { localCache: persistentLocalCache(), experimentalAutoDetectLongPolling: true });
+const fs = initializeFirestore(app, { localCache: persistentLocalCache(), experimentalForceLongPolling: true });
 const owners = OWNER_EMAILS.map(e => e.toLowerCase());
 const OK_ROLES = ["admin", "reception", "technician", "manager", "cashier"];   // anything else = no access
 let started = false;
@@ -50,16 +50,17 @@ function build(email) {
 // Is this Google account on the approved list? (owners in firebase-config.js always are)
 async function approved(u) {
   const email = (u.email || "").toLowerCase();
-  if (!u.emailVerified || !email) return { ok: false };
+  if (!u.emailVerified || !email) return { ok: false, err: "Google reports this email as not verified (" + email + "). Use a Google account whose email is verified." };
   if (owners.includes(email)) return { ok: true };
   // The first read can fail with "unavailable" while the connection is still starting (or on filtered networks): retry before refusing.
   let last = "";
   for (let i = 0; i < 5; i++) {
     try {
       const d = await getDocFromServer(doc(fs, "roles", email));
-      return { ok: d.exists() && OK_ROLES.includes(d.data().role) };
+      if (d.exists() && OK_ROLES.includes(d.data().role)) return { ok: true };
+      return { ok: false, err: d.exists() ? "Role '" + d.data().role + "' has no access." : "No entry found for " + email + " in the Users list." };
     } catch (e) {
-      if (e.code === "permission-denied") return { ok: false };
+      if (e.code === "permission-denied") return { ok: false, err: "Database refused the read (permission-denied): publish the latest firestore.rules in Firebase." };
       last = e.code || String(e);
       await new Promise(r => setTimeout(r, 1200 * (i + 1)));
     }
