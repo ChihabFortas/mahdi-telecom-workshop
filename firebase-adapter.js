@@ -30,7 +30,7 @@ async function rest(method, path, body, qs) {
     try {
       const tok = await u.getIdToken(i > 0);
       const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15000);
-      const res = await fetch(BASE + "/" + path + (qs ? "?" + qs : ""), {
+      const res = await fetch(BASE + (path[0] === ":" ? "" : "/") + path + (qs ? "?" + qs : ""), {
         method, headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined, signal: ac.signal });
       clearTimeout(t);
@@ -66,8 +66,8 @@ function build(email) {
       const load = async () => {
         if (stop) return;
         try {
-          const j = await rest("GET", "roles", null, "pageSize=300");
-          emit((j.documents || []).map(d => ({ id: decodeURIComponent(d.name.split("/").pop()), data: dec(d) })));
+          const j = await rest("POST", ":runQuery", { structuredQuery: { from: [{ collectionId: "roles" }], limit: 300 } });
+          emit((Array.isArray(j) ? j : []).filter(x => x.document).map(x => ({ id: decodeURIComponent(x.document.name.split("/").pop()), data: dec(x.document) })));
         } catch (e) {
           if (e.status === 403 || e.status === 401) {          // not an admin: read only your own role
             if (owners.includes(email)) $("#ver").textContent += "  ·  Users list refused: " + e.code;

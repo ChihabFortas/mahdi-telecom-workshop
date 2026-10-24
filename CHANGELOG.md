@@ -1,4 +1,5 @@
 # Changelog
+- v18.7: admin Users list now uses a query (runQuery) instead of the REST list call, which the rules refused. Replace firebase-adapter.js and index.html.
 - v18.6: shows the exact reason when the admin Users list is refused (footer). Replace firebase-adapter.js and index.html.
 - v18.5 (no rules change): FIXED the root cause: projects whose Firestore database is named "default" (not "(default)") - the app now finds the database name automatically (new file firebase-db.js). Add firebase-db.js; replace firebase-adapter.js, index.html, track.html.
 - v18.4 (no rules change): Users page now saves/lists roles directly over HTTPS and shows the real error (before, a blocked save stayed only in the admin browser and never reached the database). Replace firebase-adapter.js and index.html.
