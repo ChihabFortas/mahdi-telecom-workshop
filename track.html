@@ -22,7 +22,8 @@ button{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600;cu
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
-const fs = getFirestore(initializeApp(FIREBASE_CONFIG));
+import { DATABASE_ID } from "./firebase-db.js";
+const fs = getFirestore(initializeApp(FIREBASE_CONFIG), DATABASE_ID);
 const $ = s => document.querySelector(s);
 const D = {
  en:{title:"Track your phone",ph:"Tracking code or phone number",go:"Track",nf:"Not found. Check the tracking code on your receipt.",exp:"Expected return",rcv:"Received on",ret:"Returned on",quote:"Quote",labor:"Labor / service",total:"Total",war:"Covered by warranty",wait:"Waiting for your repair quote",steps:"Progress",pick:"Your devices",upd:"Updated",

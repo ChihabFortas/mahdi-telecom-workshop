@@ -6,12 +6,13 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAut
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_EMAILS } from "./firebase-config.js";
+import { DATABASE_ID } from "./firebase-db.js";
 
 const $ = s => document.querySelector(s);
 $("#ver").textContent = "MAHDI TELECOM WORKSHOP · v" + ((document.querySelector('meta[name="app-version"]') || {}).content || "");
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-const fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), experimentalForceLongPolling: true });
+const fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), experimentalForceLongPolling: true }, DATABASE_ID);
 const owners = OWNER_EMAILS.map(e => e.toLowerCase());
 const OK_ROLES = ["admin", "reception", "technician", "manager", "cashier"];   // anything else = no access
 let started = false;
@@ -20,7 +21,7 @@ function show(which) {
   for (const id of ["chk", "login", "denied"]) $("#" + id).style.display = id === which ? (id === "chk" ? "flex" : "block") : "none";
 }
 
-const BASE = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/(default)/documents";
+const BASE = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/" + DATABASE_ID + "/documents";
 async function rest(method, path, body, qs) {
   const u = auth.currentUser;
   if (!u) throw { code: "unauthenticated" };
@@ -101,7 +102,7 @@ async function approved(u) {
   if (!u.emailVerified || !email) return { ok: false, err: "Google reports this email as not verified (" + email + "). Use a Google account whose email is verified." };
   if (owners.includes(email)) return { ok: true };
   // Plain HTTPS check of roles/<email> with the user's own token (rules still apply). Independent of the Firestore SDK connection.
-  const url = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/(default)/documents/roles/" + encodeURIComponent(email);
+  const url = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/" + DATABASE_ID + "/documents/roles/" + encodeURIComponent(email);
   let last = "";
   for (let i = 0; i < 3; i++) {
     try {

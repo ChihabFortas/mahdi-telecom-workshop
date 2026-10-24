@@ -1,4 +1,5 @@
 # Changelog
+- v18.5 (no rules change): FIXED the root cause: projects whose Firestore database is named "default" (not "(default)") - the app now finds the database name automatically (new file firebase-db.js). Add firebase-db.js; replace firebase-adapter.js, index.html, track.html.
 - v18.4 (no rules change): Users page now saves/lists roles directly over HTTPS and shows the real error (before, a blocked save stayed only in the admin browser and never reached the database). Replace firebase-adapter.js and index.html.
 - v18.3 (no rules change): access check now uses a direct HTTPS read of your roles entry (no dependency on the Firestore connection), shows the exact reason, multi-tab cache. Replace firebase-adapter.js and index.html.
 - v18.2 (no rules change): forced long-polling connection, adapter cache-busting, and the denied screen now says exactly why (not verified / no entry / connection / rules). Replace firebase-adapter.js and index.html.
