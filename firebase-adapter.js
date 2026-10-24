@@ -3,7 +3,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, collection, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc,
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_EMAILS } from "./firebase-config.js";
 
@@ -11,7 +11,7 @@ const $ = s => document.querySelector(s);
 $("#ver").textContent = "MAHDI TELECOM WORKSHOP · v" + ((document.querySelector('meta[name="app-version"]') || {}).content || "");
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-const fs = initializeFirestore(app, { localCache: persistentLocalCache(), experimentalForceLongPolling: true });
+const fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), experimentalForceLongPolling: true });
 const owners = OWNER_EMAILS.map(e => e.toLowerCase());
 const OK_ROLES = ["admin", "reception", "technician", "manager", "cashier"];   // anything else = no access
 let started = false;
@@ -52,20 +52,24 @@ async function approved(u) {
   const email = (u.email || "").toLowerCase();
   if (!u.emailVerified || !email) return { ok: false, err: "Google reports this email as not verified (" + email + "). Use a Google account whose email is verified." };
   if (owners.includes(email)) return { ok: true };
-  // The first read can fail with "unavailable" while the connection is still starting (or on filtered networks): retry before refusing.
+  // Plain HTTPS check of roles/<email> with the user's own token (rules still apply). Independent of the Firestore SDK connection.
+  const url = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/(default)/documents/roles/" + encodeURIComponent(email);
   let last = "";
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     try {
-      const d = await getDocFromServer(doc(fs, "roles", email));
-      if (d.exists() && OK_ROLES.includes(d.data().role)) return { ok: true };
-      return { ok: false, err: d.exists() ? "Role '" + d.data().role + "' has no access." : "No entry found for " + email + " in the Users list." };
-    } catch (e) {
-      if (e.code === "permission-denied") return { ok: false, err: "Database refused the read (permission-denied): publish the latest firestore.rules in Firebase." };
-      last = e.code || String(e);
-      await new Promise(r => setTimeout(r, 1200 * (i + 1)));
-    }
+      const tok = await u.getIdToken(i > 0);
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 12000);
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + tok }, signal: ac.signal });
+      clearTimeout(t);
+      if (res.status === 404) return { ok: false, err: "No entry found for " + email + " in the Users list. Ask the administrator to add exactly this email." };
+      if (res.status === 403 || res.status === 401) return { ok: false, err: "Database refused the read (HTTP " + res.status + "): publish the latest firestore.rules in Firebase, with the owner email replaced." };
+      if (!res.ok) { last = "HTTP " + res.status; continue; }
+      const j = await res.json(), role = j.fields && j.fields.role && j.fields.role.stringValue;
+      return OK_ROLES.includes(role) ? { ok: true } : { ok: false, err: "Role '" + role + "' has no access." };
+    } catch (e) { last = e.name === "AbortError" ? "timeout" : (e.message || String(e)); }
+    await new Promise(r => setTimeout(r, 1000));
   }
-  return { ok: false, err: "Connection problem (" + last + "). Check the internet connection, then press the button below and sign in again." };
+  return { ok: false, err: "Cannot reach the database (" + last + "). This network may block firestore.googleapis.com: try another network or phone data." };
 }
 
 function start(u) {

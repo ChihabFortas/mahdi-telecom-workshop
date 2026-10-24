@@ -1,4 +1,5 @@
 # Changelog
+- v18.3 (no rules change): access check now uses a direct HTTPS read of your roles entry (no dependency on the Firestore connection), shows the exact reason, multi-tab cache. Replace firebase-adapter.js and index.html.
 - v18.2 (no rules change): forced long-polling connection, adapter cache-busting, and the denied screen now says exactly why (not verified / no entry / connection / rules). Replace firebase-adapter.js and index.html.
 - v18.1 (no rules change): fixed approved users being refused with "unavailable" on first sign-in (retry + long-polling fallback + clear connection message). Replace firebase-adapter.js only.
 - v18 (rules changed): approved members only (no guests; unapproved Google accounts see "Access denied" and the dashboard never loads), secured login screen, full Users manager (add / edit / suspend / remove / search), README rewritten for MAHDI TELECOM WORKSHOP. Re-enter your owner email in firestore.rules after pasting.
