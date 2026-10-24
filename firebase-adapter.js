@@ -20,28 +20,76 @@ function show(which) {
   for (const id of ["chk", "login", "denied"]) $("#" + id).style.display = id === which ? (id === "chk" ? "flex" : "block") : "none";
 }
 
+const BASE = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_CONFIG.projectId + "/databases/(default)/documents";
+async function rest(method, path, body, qs) {
+  const u = auth.currentUser;
+  if (!u) throw { code: "unauthenticated" };
+  let last;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const tok = await u.getIdToken(i > 0);
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15000);
+      const res = await fetch(BASE + "/" + path + (qs ? "?" + qs : ""), {
+        method, headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined, signal: ac.signal });
+      clearTimeout(t);
+      if (res.ok) return res.status === 204 ? {} : await res.json();
+      if (res.status === 403 || res.status === 401) throw { status: res.status, code: "permission-denied (publish firestore.rules with YOUR email as owner)" };
+      if (res.status === 404) throw { status: 404, code: "not-found" };
+      last = { code: "HTTP " + res.status };
+    } catch (e) {
+      if (e.status) throw e;
+      last = { code: e.name === "AbortError" ? "timeout" : "network: " + (e.message || e) };
+    }
+  }
+  throw last;
+}
+const enc = o => ({ fields: Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined).map(([k, v]) => [k, { stringValue: String(v) }])) });
+const dec = d => Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, v.stringValue ?? v.integerValue ?? v.booleanValue ?? ""]));
+
 function build(email) {
   const q = r => ({
     orderBy: (f, d) => q(query(r, orderBy(f, d || "asc"))),
     limit: n => q(query(r, limit(n))),
     onSnapshot: (ok, er) => onSnapshot(r, ok, er)
   });
-  // Only admins may list all roles; everyone else just reads their own role document.
+  // Roles are read/written over plain HTTPS with the signed-in user's token (rules still apply).
+  // Unlike SDK writes, a failure here is reported immediately instead of being queued silently on this device.
   const rolesQ = {
     onSnapshot: (ok, er) => {
-      let u2 = null;
-      const u1 = onSnapshot(collection(fs, "roles"), ok, e => {
-        if (e.code === "permission-denied") {
-          u2 = onSnapshot(doc(fs, "roles", email),
-            d => ok({ docs: [{ id: email, data: () => (d.exists() ? d.data() : { role: "none" }) }] }), er);
-        } else if (er) er(e);
-      });
-      return () => { u1(); if (u2) u2(); };
+      let stop = false;
+      const emit = docs => ok({ docs: docs.map(d => ({ id: d.id, data: () => d.data })) });
+      const load = async () => {
+        if (stop) return;
+        try {
+          const j = await rest("GET", "roles", null, "pageSize=300");
+          emit((j.documents || []).map(d => ({ id: decodeURIComponent(d.name.split("/").pop()), data: dec(d) })));
+        } catch (e) {
+          if (e.status === 403 || e.status === 401) {          // not an admin: read only your own role
+            try { emit([{ id: email, data: dec(await rest("GET", "roles/" + encodeURIComponent(email))) }]); }
+            catch (e2) { if (e2.status === 404) emit([{ id: email, data: { role: "none" } }]); else if (er) er(e2); }
+          } else if (er) er(e);
+        }
+      };
+      load();
+      const timer = setInterval(load, 20000);
+      window.addEventListener("roles-refresh", load);
+      return () => { stop = true; clearInterval(timer); window.removeEventListener("roles-refresh", load); };
     }
+  };
+  const doc_ = p => {
+    const r0 = doc(fs, p);
+    if (!p.startsWith("roles/")) return { set: o => setDoc(r0, o), update: o => updateDoc(r0, o), delete: () => deleteDoc(r0) };
+    const path = "roles/" + encodeURIComponent(p.slice(6)), done = x => { window.dispatchEvent(new Event("roles-refresh")); return x; };
+    return {
+      set: o => rest("PATCH", path, enc(o)).then(done),
+      update: o => rest("PATCH", path, enc(o), Object.keys(o).map(k => "updateMask.fieldPaths=" + encodeURIComponent(k)).join("&") + "&currentDocument.exists=true").then(done),
+      delete: () => rest("DELETE", path).then(done)
+    };
   };
   const db = {
     collection: p => (p === "roles" ? rolesQ : q(collection(fs, p))),
-    doc: p => { const r = doc(fs, p); return { set: o => setDoc(r, o), update: o => updateDoc(r, o), delete: () => deleteDoc(r) }; }
+    doc: doc_
   };
   const user = { id: async () => email, isOwner: async () => owners.includes(email) };
   return { db, user };
@@ -69,7 +117,7 @@ async function approved(u) {
     } catch (e) { last = e.name === "AbortError" ? "timeout" : (e.message || String(e)); }
     await new Promise(r => setTimeout(r, 1000));
   }
-  return { ok: false, err: "Cannot reach the database (" + last + "). This network may block firestore.googleapis.com: try another network or phone data." };
+  return { ok: false, err: "Cannot reach the database (" + last + "). This network may block firestore.googleapis.com: try another network or phone data.", net: true };
 }
 
 function start(u) {
@@ -82,10 +130,10 @@ function start(u) {
   started = true;
   // If an admin removes or suspends this account while it is open, send it back to the gate immediately.
   if (!owners.includes(email)) {
-    onSnapshot(doc(fs, "roles", email), d => {
-      if (d.metadata.fromCache && !d.exists()) return;
-      if (!d.exists() || !OK_ROLES.includes(d.data().role)) location.reload();
-    }, () => {});
+    setInterval(async () => {
+      const r2 = await approved(auth.currentUser);
+      if (!r2.ok && !r2.net) location.reload();
+    }, 30000);
   }
   const s = document.createElement("script");
   s.src = "app.js?t=" + Math.floor(Date.now() / 6e5); // picks up updates within ~10 minutes
