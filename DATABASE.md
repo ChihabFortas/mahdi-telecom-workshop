@@ -46,7 +46,7 @@ Four collections. No indexes needed.
 `caseId, caseNo, customer, phone, ck (customer key), amount (number), date, by (role), note, at (ms)`
 
 ## `roles/{googleEmailLowercase}`
-`role` = `admin` `reception` `technician` `manager` `cashier` `guest` `blocked`, `label` = display name.
+`role` = `admin` `reception` `technician` `manager` `cashier` `blocked` (no other value is accepted; an old `guest` value has no access), `label` = display name, plus `added`, `by`, `upd`, `prevRole` (set while suspended). Document id = the user's Google email in lowercase. Only admins can create, edit or delete roles.
 Owners in `OWNER_EMAILS` are admin without a document.
 
 ## `audit/{autoId}` — append-only log
@@ -58,4 +58,4 @@ Owners in `OWNER_EMAILS` are admin without a document.
 - Custody (`loc`, `track`) and return date: reception, technician, admin.
 - Price (`charge`): admin, manager, cashier, technician. Record payments: admin, manager, cashier.
 - Audit log: written by staff, read by admin only, never editable.
-- Guests: read cases only. No role = no access.
+- No guests. A Google account without an approved role (or with `blocked`) cannot read or write anything.

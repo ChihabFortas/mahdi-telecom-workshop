@@ -16,14 +16,16 @@ service cloud.firestore {
     function cliRole() { return myRole() in ['admin','manager','cashier','reception']; }
     function invRole() { return myRole() in ['admin','manager','technician']; }
     function staff() { return myRole() in ['admin','reception','technician','manager','cashier']; }
-    function active() { return staff() || myRole() == 'guest'; }
+    function active() { return staff(); }   // approved staff only: no guests, no visitors
     function touches(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
 
     // ---------- roles: admins manage, everyone can read their own ----------
     match /roles/{docId} {
       allow get: if signedIn() && (docId == me() || myRole() == 'admin');
       allow list: if myRole() == 'admin';
-      allow write: if myRole() == 'admin';
+      allow create, update: if myRole() == 'admin' && docId == docId.lower()
+        && request.resource.data.role in ['admin','reception','technician','manager','cashier','blocked'];
+      allow delete: if myRole() == 'admin';
     }
 
     // ---------- cases ----------

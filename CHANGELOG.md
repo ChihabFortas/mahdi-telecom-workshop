@@ -1,4 +1,5 @@
 # Changelog
+- v18 (rules changed): approved members only (no guests; unapproved Google accounts see "Access denied" and the dashboard never loads), secured login screen, full Users manager (add / edit / suspend / remove / search), README rewritten for MAHDI TELECOM WORKSHOP. Re-enter your owner email in firestore.rules after pasting.
 - v17 (no rules change): application renamed to MAHDI TELECOM WORKSHOP (header, browser title, login, receipts, tracking page, guides).
 - v16 (rules changed): receipts and tickets - reception receipt (80 mm), workshop quote (out of warranty only), return receipt, barcode tickets 35x20 / 45x35 / 57x45 mm, QR code to a customer tracking page (track.html), expected return date, scan a ticket barcode in the search box. See PRINTING.md.
 - v15 (no rules change): FIXED "Maximum call stack size exceeded" on out-of-warranty cases (price total function called itself). Cases and dashboard load again. Also replace firebase-adapter.js so the footer shows the right version.

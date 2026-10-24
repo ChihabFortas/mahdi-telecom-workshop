@@ -1,4 +1,4 @@
-let clients=[],acx=[],cliOn=false,selClient=null,parts=[],grns=[],mv=[],invOn=false,photo2=null,wf='',pays=[],acctKey='',auditUn=null,db,user,uid=null,owner=false,raw=[],cases=[],roles={},cur=null,photo=null,mo=new Date().toISOString().slice(0,7);
+let rolesLoaded=false,clients=[],acx=[],cliOn=false,selClient=null,parts=[],grns=[],mv=[],invOn=false,photo2=null,wf='',pays=[],acctKey='',auditUn=null,db,user,uid=null,owner=false,raw=[],cases=[],roles={},cur=null,photo=null,mo=new Date().toISOString().slice(0,7);
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
 const S={waiting:'Waiting for repair',repairing:'In repair',repaired:'Ready for pickup',swap_todo:'Swap: to send',swap_sent:'Swap: at factory',swap_done:'Swapped: ready for pickup',delivered:'Delivered',archived:'Archived'};
@@ -8,8 +8,8 @@ const EV={received:'Received at reception',sent_ws:'Sent to workshop',recv_ws:'R
 const me=()=>(roles[uid]&&roles[uid].label)||(owner?'owner':String(uid||'').slice(-6)),mk=k=>({k,at:Date.now(),by:me(),role:role()});
 const trk=c=>{const t=c.track||[];return `<div class="box hist"><b>📍 <span>Tracking</span></b>${t.length?t.map(e=>`<div>✓ <span>${EV[e.k]||esc(e.k)}</span> · ${esc(new Date(e.at).toLocaleString())} · ${esc(e.by)} (<span>${esc(e.role)}</span>)</div>`).join(''):'<div><span>No tracking events yet (older case).</span></div>'}</div>`};
 const wp=c=>c.warranty==='in'?'<span class="pill" style="color:var(--ok);border-color:var(--ok)">Warranty</span>':c.warranty==='out'?'<span class="pill" style="color:var(--wr);border-color:var(--wr)">Out of warranty</span>':'<span class="pill">Warranty ?</span>';
-const role=()=>owner?'admin':(roles[uid]&&roles[uid].role)||'guest';
-const can={edit:()=>['admin','technician'].includes(role()),arch:()=>['admin','manager'].includes(role()),adm:()=>role()==='admin',swap:()=>['admin','technician','manager'].includes(role()),pay:()=>['admin','manager','cashier','reception'].includes(role()),paytab:()=>['admin','manager','cashier'].includes(role()),cli:()=>['admin','manager','cashier','reception'].includes(role()),money:()=>['admin','manager','cashier','technician','reception'].includes(role()),blocked:()=>['blocked','none'].includes(role()),rec:()=>['admin','reception'].includes(role()),ws:()=>['admin','technician'].includes(role()),inv:()=>['admin','manager','technician'].includes(role())};
+const role=()=>owner?'admin':(roles[uid]&&roles[uid].role)||'none';
+const can={edit:()=>['admin','technician'].includes(role()),arch:()=>['admin','manager'].includes(role()),adm:()=>role()==='admin',swap:()=>['admin','technician','manager'].includes(role()),pay:()=>['admin','manager','cashier','reception'].includes(role()),paytab:()=>['admin','manager','cashier'].includes(role()),cli:()=>['admin','manager','cashier','reception'].includes(role()),money:()=>['admin','manager','cashier','technician','reception'].includes(role()),blocked:()=>['blocked','none','guest'].includes(role()),rec:()=>['admin','reception'].includes(role()),ws:()=>['admin','technician'].includes(role()),inv:()=>['admin','manager','technician'].includes(role())};
 const tot=c=>(+c.charge||0)+(+c.partsTotal||0);
 const money=n=>(Math.round((+n||0)*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+(CFG.currency?' '+CFG.currency:'');
 const paidOf=id=>pays.filter(p=>p.caseId===id).reduce((a,p)=>a+p.amount,0),due=c=>c.warranty==='out'?Math.max(0,Math.round((tot(c)-paidOf(c.id))*100)/100):0;
@@ -25,14 +25,14 @@ async function init(){
  try{db=wrapDb(await claude.use('db'));user=await claude.use('user')}catch(e){}
  if(!db){$('#off').style.display='block';head();dash();return}
  try{uid=user?await user.id():null;owner=user?await user.isOwner():false}catch(e){}loadPrefs();
- db.collection('roles').onSnapshot(s=>{roles={};s.docs.forEach(d=>roles[d.id]=d.data());head()},()=>{});
+ db.collection('roles').onSnapshot(s=>{roles={};s.docs.forEach(d=>roles[d.id]=d.data());rolesLoaded=true;head()},()=>{});
  db.collection('cases').onSnapshot(s=>{LOADED.cases=true;raw=s.docs.map(d=>({id:d.id,...d.data()}));cases=raw.map(norm);if(cur){const n=cases.find(x=>x.id===cur.id);if(n)cur=n}list();dash();swp();pay();clearTimeout(window.__sp);window.__sp=setTimeout(syncPublic,1200)},e=>toast('Database error: '+e.code));
  db.collection('payments').onSnapshot(s=>{pays=s.docs.map(d=>({id:d.id,...d.data()}));list();dash();pay()},()=>{});
  db.collection('settings').onSnapshot(s=>{const d=s.docs.find(x=>x.id==='app');CFG={...CFG0,...(d?d.data():{})};applyCfg();dash();swp()},()=>{});
- setTimeout(()=>{if(role()!=='guest'&&!can.blocked())audit('opened app')},2500);
+ setTimeout(()=>{if(!can.blocked())audit('opened app')},2500);
  head();
 }
-function head(){$('#role').textContent=role();$('#new').style.display=can.rec()?'':'none';$('#adm').style.display=can.adm()?'':'none';$('#tP').style.display=can.paytab()?'':'none';$('#tL').style.display=can.cli()?'':'none';subCli();$('#tS').style.display=can.swap()?'':'none';$('#tI').style.display=can.inv()?'':'none';subInv();$('#aud').style.display=can.adm()?'':'none';$('#lock').style.display=can.blocked()?'grid':'none';list();pay();dash()}
+function head(){$('#role').textContent=role();$('#new').style.display=can.rec()?'':'none';$('#adm').style.display=can.adm()?'':'none';$('#tP').style.display=can.paytab()?'':'none';$('#tL').style.display=can.cli()?'':'none';subCli();$('#tS').style.display=can.swap()?'':'none';$('#tI').style.display=can.inv()?'':'none';subInv();$('#aud').style.display=can.adm()?'':'none';$('#lock').style.display=(rolesLoaded&&can.blocked())?'grid':'none';list();pay();dash()}
 function tab(t){[['D','dash'],['C','cases'],['S','swap'],['P','pay'],['I','inv'],['L','cli']].forEach(([k,i])=>{$('#'+i).style.display=k===t?'':'none';$('#t'+k).className=k===t?'on':''})}
 $('#tD').onclick=()=>tab('D');$('#tC').onclick=()=>tab('C');$('#wt').onclick=e=>{const b=e.target.closest('button');if(!b)return;wf=b.dataset.w;[...$('#wt').children].forEach(x=>x.className=x===b?'on':'');list()};$('#tS').onclick=()=>tab('S');$('#tP').onclick=()=>tab('P');$('#tI').onclick=()=>tab('I');$('#tL').onclick=()=>tab('L');$('#tk').addEventListener('input',e=>{$('#q').value=e.target.value;tab('C');list()});
 function list(){if(db&&!LOADED.cases){$('#list').innerHTML='<div class="mu" style="padding:16px;text-align:center">Loading…</div>';return}
@@ -396,13 +396,38 @@ async function acctPay(){
  const items=[];for(const c of cs){if(a<=0.001)break;const x=Math.min(due(c),a);items.push([c,x]);a-=x}
  if(await takePay(items,val('a_n')))setTimeout(()=>acct(acctKey),400)}
 async function del(){if(!(await ask('Delete this case permanently?')))return;try{const n=cur.caseNo;await db.doc('cases/'+cur.id).delete();audit('case deleted',n);shut()}catch(e){toast('Failed: '+(e.code||e.message))}}
-$('#adm').onclick=()=>{open_(`<div class="top"><h1>Users &amp; roles</h1><span class="sp"></span><button onclick="shut()">Close ✕</button></div>
-<div class="box mu">Anyone signed in without a role is a <b>guest</b> (view only). Type the person's Google email in the User ID field. Owners listed in firebase-config.js are always admin.</div>
-<div class="box"><label style="margin-top:0">User ID</label><input id="u_i"><label>Name (label)</label><input id="u_n"><label>Role</label><select id="u_r"><option value="reception">Reception team</option><option value="technician">Repair technician</option><option value="manager">Manager</option><option value="cashier">Cashier</option><option value="admin">Admin</option><option value="blocked">Suspended (no access)</option></select><div class="row"><button class="pri" onclick="addRole()">Save role</button></div></div>
-<div class="box"><b>Assigned</b>${Object.entries(roles).map(([k,v])=>`<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><span class="m"><div>${esc(v.label||'(no name)')} · <b>${esc(v.role)}</b></div><div class="mu">${esc(k)}</div></span><button class="dng" data-rm="${esc(k)}">Remove</button></div>`).join('')||'<div class="mu">None yet</div>'}</div>
+const ROLES=['admin','manager','reception','technician','cashier','blocked'];
+const RN={admin:'Admin',manager:'Manager',reception:'Reception team',technician:'Repair technician',cashier:'Cashier',blocked:'Suspended (no access)'};
+const emailMode=()=>String(uid||'').includes('@'),myId=()=>String(uid||'').toLowerCase();
+let uq='';
+function usersOpen(){
+ open_(`<div class="top"><h1>Users &amp; roles</h1><span class="sp"></span><button onclick="shut()">Close ✕</button></div>
+<div class="box mu">Only approved users can sign in. Add the Google email and role of each person. Anyone not listed is refused.</div>
+<div class="box"><h2>Add user</h2><label style="margin-top:0">Email (Google account)</label><input id="u_i" type="email" autocomplete="off" autocapitalize="off"><label>Name (label)</label><input id="u_n"><label>Role</label><select id="u_r">${ROLES.filter(r=>r!=='blocked').map(r=>`<option value="${r}"${r==='reception'?' selected':''}>${RN[r]}</option>`).join('')}</select><div class="row"><button class="pri" onclick="addRole()"><span>Add user</span></button></div></div>
+<input id="u_q" placeholder="Search users…" value="${esc(uq)}" style="margin-top:12px"><div id="ulist"></div>
 <div class="mu" style="margin-top:12px">Your ID: ${esc(uid)}</div>`);
- $('#md').onclick=async e=>{const k=e.target.dataset&&e.target.dataset.rm;if(k){try{await db.doc('roles/'+k).delete();audit('role removed',k);$('#adm').click()}catch(x){toast('Failed')}}}};
-async function addRole(){const i=val('u_i');if(!i)return;try{await db.doc('roles/'+i.toLowerCase()).set({role:$('#u_r').value,label:val('u_n')});audit('role assigned',i,$('#u_r').value);toast('Role saved');setTimeout(()=>$('#adm').click(),300)}catch(e){toast('Failed: '+(e.code||e.message))}}
+ $('#u_q').oninput=e=>{uq=e.target.value;usersList()};
+ usersList();
+ $('#md').onclick=e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(d.ue)userEdit(d.ue);else if(d.ut)userToggle(d.ut);else if(d.ur)userRemove(d.ur);else if(d.us)userSave(d.us)};
+}
+function usersList(){
+ const q=uq.toLowerCase().trim(),es=Object.entries(roles).filter(([k,v])=>!q||(k+' '+(v.label||'')+' '+(v.role||'')).toLowerCase().includes(q)).sort((a,b)=>String(a[1].label||a[0]).localeCompare(String(b[1].label||b[0])));
+ $('#ulist').innerHTML=es.length?es.map(([k,v])=>{const self=k.toLowerCase()===myId(),r=v.role||'none',ok=ROLES.includes(r);
+  return `<div class="box" style="margin-top:8px;padding:10px 12px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="m" style="min-width:140px"><div><b>${esc(v.label||'—')}</b> ${self?'<span class="mu"><span>(you)</span></span>':''}</div><div class="mu">${esc(k)}</div></span><span class="pill ${r==='blocked'?'unpaid':ok?'':'waiting'}"><span>${ok?RN[r]:'Legacy guest: no access, assign a role'}</span></span></div>${v.added?`<div class="mu" style="margin-top:4px"><span>Added</span> ${esc(v.added)}</div>`:''}<div class="row" style="margin-top:8px"><button data-ue="${esc(k)}"><span>Edit</span></button>${self?'':`<button data-ut="${esc(k)}"><span>${r==='blocked'?'Activate':'Suspend'}</span></button><button class="dng" data-ur="${esc(k)}"><span>Remove</span></button>`}</div></div>`}).join(''):'<div class="mu" style="margin-top:8px"><span>No users yet</span></div>';
+}
+function userEdit(k){const v=roles[k];if(!v)return;const self=k.toLowerCase()===myId(),r=ROLES.includes(v.role)?v.role:'reception';
+ open_(`<div class="top"><h1><span>Edit user</span></h1><span class="sp"></span><button onclick="usersOpen()"><span>Cancel</span></button></div><div class="box"><div class="mu">${esc(k)}</div><label>Name (label)</label><input id="e_un" value="${esc(v.label||'')}"><label>Role</label><select id="e_ur" ${self?'disabled':''}>${ROLES.map(x=>`<option value="${x}"${x===r?' selected':''}>${RN[x]}</option>`).join('')}</select>${self?'<div class="mu" style="margin-top:6px"><span>You cannot change your own access</span></div>':''}<div class="row"><button class="pri" data-us="${esc(k)}"><span>Save</span></button></div></div>`)}
+async function userSave(k){const v=roles[k];if(!v)return;const self=k.toLowerCase()===myId(),o={label:val('e_un'),upd:today()};if(!self)o.role=val('e_ur');
+ try{await db.doc('roles/'+k).update(o);Object.assign(v,o);audit('user edited',k,o.role||'');toast('User saved');usersOpen()}catch(e){toast('Failed: '+(e.code||e.message))}}
+async function userToggle(k){const v=roles[k];if(!v)return;if(k.toLowerCase()===myId())return toast('You cannot change your own access');
+ const was=v.role==='blocked',o=was?{role:(ROLES.includes(v.prevRole)&&v.prevRole!=='blocked')?v.prevRole:'reception',prevRole:''}:{role:'blocked',prevRole:v.role||''};
+ try{await db.doc('roles/'+k).update({...o,upd:today()});Object.assign(v,o);audit(was?'user activated':'user suspended',k);toast('User saved');usersList()}catch(e){toast('Failed: '+(e.code||e.message))}}
+async function userRemove(k){if(k.toLowerCase()===myId())return toast('You cannot change your own access');if(!(await ask('Remove this user? They will lose access immediately.')))return;
+ try{await db.doc('roles/'+k).delete();delete roles[k];audit('user removed',k);toast('User removed');usersList()}catch(e){toast('Failed: '+(e.code||e.message))}}
+async function addRole(){let i=val('u_i').replace(/\s+/g,'');if(!i)return;if(emailMode())i=i.toLowerCase();
+ if(emailMode()&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(i))return toast('Enter a valid email address');if(roles[i])return toast('This user already exists: use Edit');
+ try{const o={role:val('u_r'),label:val('u_n'),added:today(),by:me()};await db.doc('roles/'+i).set(o);roles[i]=o;audit('user added',i,o.role);toast('User added');usersOpen()}catch(e){toast('Failed: '+(e.code||e.message))}}
+$('#adm').onclick=()=>{uq='';usersOpen()};
 
 const DICT={fr:{},ar:{}};`Dashboard|Tableau de bord|لوحة القيادة
 Cases|Dossiers|الملفات
@@ -863,7 +888,25 @@ Expected return: days after reception|Retour prévu : jours après réception|ا
 Receipt footer note|Note de bas de reçu|ملاحظة أسفل الإيصال
 Receipt language|Langue des reçus|لغة الإيصالات
 Follow app language|Langue de l’application|لغة التطبيق
-Tracking page address (optional)|Adresse de la page de suivi (facultatif)|عنوان صفحة التتبع (اختياري)`.split('\n').forEach(l=>{const [e,f,a]=l.split('|');DICT.fr[e]=f;DICT.ar[e]=a});
+Tracking page address (optional)|Adresse de la page de suivi (facultatif)|عنوان صفحة التتبع (اختياري)
+Add user|Ajouter un utilisateur|إضافة مستخدم
+Email (Google account)|E-mail (compte Google)|البريد (حساب Google)
+Search users…|Rechercher un utilisateur…|ابحث عن مستخدم…
+Edit user|Modifier l’utilisateur|تعديل المستخدم
+Suspend|Suspendre|إيقاف
+Activate|Réactiver|تفعيل
+Added|Ajouté|أُضيف
+(you)|(vous)|(أنت)
+No users yet|Aucun utilisateur|لا يوجد مستخدمون
+Legacy guest: no access, assign a role|Ancien invité : aucun accès, attribuez un rôle|زائر قديم: بلا وصول، حدّد دورًا
+Only approved users can sign in. Add the Google email and role of each person. Anyone not listed is refused.|Seuls les utilisateurs approuvés peuvent se connecter. Ajoutez l’e-mail Google et le rôle de chaque personne. Toute personne non listée est refusée.|يُسمح بالدخول للمستخدمين المعتمدين فقط. أضف بريد Google ودور كل شخص. أي شخص غير مدرج يُرفض.
+Enter a valid email address|Saisissez une adresse e-mail valide|أدخل بريدًا إلكترونيًا صحيحًا
+This user already exists: use Edit|Cet utilisateur existe déjà : utilisez Modifier|هذا المستخدم موجود: استخدم تعديل
+You cannot change your own access|Vous ne pouvez pas modifier votre propre accès|لا يمكنك تعديل صلاحياتك
+Remove this user? They will lose access immediately.|Retirer cet utilisateur ? Il perdra l’accès immédiatement.|إزالة هذا المستخدم؟ سيفقد الوصول فورًا.
+User saved|Utilisateur enregistré|تم حفظ المستخدم
+User added|Utilisateur ajouté|تمت إضافة المستخدم
+User removed|Utilisateur retiré|تمت إزالة المستخدم`.split('\n').forEach(l=>{const [e,f,a]=l.split('|');DICT.fr[e]=f;DICT.ar[e]=a});
 const PAT=[[/^Client account \((.+)\)$/,(m,l)=>(l==='fr'?'Compte client (':'حساب العميل (')+m[1]+')'],[/^👤 Linked to client: (.+)$/,(m,l)=>(l==='fr'?'👤 Lié au client : ':'👤 مرتبط بالعميل: ')+m[1]],[/^Only (\d+) in stock$/,(m,l)=>l==='fr'?'Seulement '+m[1]+' en stock':'المتوفر '+m[1]+' فقط'],[/^([\d.]+) d$/,(m,l)=>m[1]+' '+(l==='fr'?'j':'ي')],
 [/^(Under warranty|Out of warranty) \((\d+)\)$/,(m,l)=>DICT[l][m[1]]+' ('+m[2]+')'],
 [/^(\d+) of (\d+) cases$/,(m,l)=>l==='fr'?m[1]+' sur '+m[2]+' dossiers':m[1]+' من '+m[2]+' ملف'],

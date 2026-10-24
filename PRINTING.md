@@ -14,7 +14,7 @@ After a case is created the app offers to print the receipt and the ticket; afte
 4. Receipts are printed with the browser's paper size for the printer; use the 80 mm roll size so the paper is cut after the last line.
 
 ## Tracking page
-`track.html` (same folder as index.html) is what the QR code opens, e.g. `https://USER.github.io/repair-desk/track.html?t=CODE`. Customers can also type their tracking code or phone number. Settings > Workshop settings lets admin set the shop phone, receipt footer note, receipt language, and an optional custom tracking page address.
+`track.html` (same folder as index.html) is what the QR code opens, e.g. `https://USER.github.io/REPO/track.html?t=CODE`. Customers can also type their tracking code or phone number. Settings > Workshop settings lets admin set the shop phone, receipt footer note, receipt language, and an optional custom tracking page address.
 
 ## Notes
 - Barcodes and QR codes are drawn with two small libraries loaded from cdnjs, so the reception PC needs internet the first time.

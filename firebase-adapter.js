@@ -1,9 +1,9 @@
-// Connects the app to Firebase (Google sign-in + Firestore).
-// It exposes the same tiny API the app already uses (db + user), so app.js is unchanged.
+// Connects the app to Firebase (Google sign-in + Firestore) and enforces the approved-members gate:
+// nobody gets the dashboard, or any data, unless an admin has added their Google email.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, collection, doc, setDoc, updateDoc, deleteDoc,
+import { initializeFirestore, persistentLocalCache, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_EMAILS } from "./firebase-config.js";
 
@@ -13,7 +13,12 @@ const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
 const fs = initializeFirestore(app, { localCache: persistentLocalCache() });
 const owners = OWNER_EMAILS.map(e => e.toLowerCase());
+const OK_ROLES = ["admin", "reception", "technician", "manager", "cashier"];   // anything else = no access
 let started = false;
+
+function show(which) {
+  for (const id of ["chk", "login", "denied"]) $("#" + id).style.display = id === which ? (id === "chk" ? "flex" : "block") : "none";
+}
 
 function build(email) {
   const q = r => ({
@@ -42,13 +47,34 @@ function build(email) {
   return { db, user };
 }
 
+// Is this Google account on the approved list? (owners in firebase-config.js always are)
+async function approved(u) {
+  const email = (u.email || "").toLowerCase();
+  if (!u.emailVerified || !email) return { ok: false };
+  if (owners.includes(email)) return { ok: true };
+  try {
+    const d = await getDoc(doc(fs, "roles", email));
+    return { ok: d.exists() && OK_ROLES.includes(d.data().role) };
+  } catch (e) {
+    return { ok: false, err: e.code === "permission-denied" ? "" : (e.code || String(e)) };
+  }
+}
+
 function start(u) {
   const email = (u.email || "").toLowerCase();
   const api = build(email);
   window.claude = { use: async n => (n === "db" ? api.db : api.user) };
-  $("#login").style.display = "none";
+  show(null);
+  document.body.classList.add("ok");
   if (started) return;
   started = true;
+  // If an admin removes or suspends this account while it is open, send it back to the gate immediately.
+  if (!owners.includes(email)) {
+    onSnapshot(doc(fs, "roles", email), d => {
+      if (d.metadata.fromCache && !d.exists()) return;
+      if (!d.exists() || !OK_ROLES.includes(d.data().role)) location.reload();
+    }, () => {});
+  }
   const s = document.createElement("script");
   s.src = "app.js?t=" + Math.floor(Date.now() / 6e5); // picks up updates within ~10 minutes
   s.onload = () => {
@@ -63,10 +89,19 @@ function start(u) {
 
 $("#gbtn").onclick = async () => {
   const p = new GoogleAuthProvider();
+  p.setCustomParameters({ prompt: "select_account" });
   try { await signInWithPopup(auth, p); }
   catch (e) {
     if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") signInWithRedirect(auth, p);
     else $("#lerr").textContent = e.code || String(e);
   }
 };
-onAuthStateChanged(auth, u => { if (u) start(u); else $("#login").style.display = "block"; });
+$("#dout").onclick = async () => { await signOut(auth); location.reload(); };
+
+onAuthStateChanged(auth, async u => {
+  if (!u) { document.body.classList.remove("ok"); show("login"); return; }
+  show("chk");
+  const r = await approved(u);
+  if (!r.ok) { $("#dmail").textContent = u.email || ""; $("#derr").textContent = r.err || ""; show("denied"); return; }
+  start(u);
+});
