@@ -8,7 +8,6 @@ export const FIREBASE_CONFIG = {
   storageBucket: "mahdi-telecom-workshop.firebasestorage.app",
   messagingSenderId: "927617923647",
   appId: "1:927617923647:web:d767aade3fecee945e968a",
-  measurementId: "G-1MYCR258GV"
 };
 
 // Google emails that are always Admin (the owner). Must match firestore.rules.
