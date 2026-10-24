@@ -35,7 +35,10 @@ async function rest(method, path, body, qs) {
         body: body ? JSON.stringify(body) : undefined, signal: ac.signal });
       clearTimeout(t);
       if (res.ok) return res.status === 204 ? {} : await res.json();
-      if (res.status === 403 || res.status === 401) throw { status: res.status, code: "permission-denied (publish firestore.rules with YOUR email as owner)" };
+      if (res.status === 403 || res.status === 401) {
+        const j = await res.json().catch(() => ({}));
+        throw { status: res.status, code: "permission-denied (" + ((j.error && j.error.message) || res.status) + "): publish firestore.rules in the database named '" + DATABASE_ID + "' with YOUR email as owner" };
+      }
       if (res.status === 404) throw { status: 404, code: "not-found" };
       last = { code: "HTTP " + res.status };
     } catch (e) {
@@ -67,6 +70,7 @@ function build(email) {
           emit((j.documents || []).map(d => ({ id: decodeURIComponent(d.name.split("/").pop()), data: dec(d) })));
         } catch (e) {
           if (e.status === 403 || e.status === 401) {          // not an admin: read only your own role
+            if (owners.includes(email)) $("#ver").textContent += "  ·  Users list refused: " + e.code;
             try { emit([{ id: email, data: dec(await rest("GET", "roles/" + encodeURIComponent(email))) }]); }
             catch (e2) { if (e2.status === 404) emit([{ id: email, data: { role: "none" } }]); else if (er) er(e2); }
           } else if (er) er(e);
