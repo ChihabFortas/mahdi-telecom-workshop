@@ -3,7 +3,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
+import { initializeFirestore, persistentLocalCache, collection, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_EMAILS } from "./firebase-config.js";
 
@@ -11,7 +11,7 @@ const $ = s => document.querySelector(s);
 $("#ver").textContent = "MAHDI TELECOM WORKSHOP · v" + ((document.querySelector('meta[name="app-version"]') || {}).content || "");
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-const fs = initializeFirestore(app, { localCache: persistentLocalCache() });
+const fs = initializeFirestore(app, { localCache: persistentLocalCache(), experimentalAutoDetectLongPolling: true });
 const owners = OWNER_EMAILS.map(e => e.toLowerCase());
 const OK_ROLES = ["admin", "reception", "technician", "manager", "cashier"];   // anything else = no access
 let started = false;
@@ -52,12 +52,19 @@ async function approved(u) {
   const email = (u.email || "").toLowerCase();
   if (!u.emailVerified || !email) return { ok: false };
   if (owners.includes(email)) return { ok: true };
-  try {
-    const d = await getDoc(doc(fs, "roles", email));
-    return { ok: d.exists() && OK_ROLES.includes(d.data().role) };
-  } catch (e) {
-    return { ok: false, err: e.code === "permission-denied" ? "" : (e.code || String(e)) };
+  // The first read can fail with "unavailable" while the connection is still starting (or on filtered networks): retry before refusing.
+  let last = "";
+  for (let i = 0; i < 5; i++) {
+    try {
+      const d = await getDocFromServer(doc(fs, "roles", email));
+      return { ok: d.exists() && OK_ROLES.includes(d.data().role) };
+    } catch (e) {
+      if (e.code === "permission-denied") return { ok: false };
+      last = e.code || String(e);
+      await new Promise(r => setTimeout(r, 1200 * (i + 1)));
+    }
   }
+  return { ok: false, err: "Connection problem (" + last + "). Check the internet connection, then press the button below and sign in again." };
 }
 
 function start(u) {
